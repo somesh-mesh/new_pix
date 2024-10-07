@@ -3,27 +3,41 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:pixabay/constants/api_interface.dart';
 import 'package:pixabay/data/get_images_model.dart';
 
+class PixabayApp extends StatelessWidget {
+  const PixabayApp({Key? key}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Pixabay Gallery',
+      theme: ThemeData(
+        primarySwatch: Colors.blue,
+      ),
+      home: const PixabayImagesList(),
+    );
+  }
+}
+
 class PixabayImagesList extends StatefulWidget {
-  const PixabayImagesList({super.key});
+  const PixabayImagesList({Key? key}) : super(key: key);
 
   @override
   State<PixabayImagesList> createState() => _PixabayImagesListState();
 }
 
 class _PixabayImagesListState extends State<PixabayImagesList> {
-  GetImagesModel? getImagesModel;
-  List<Hits>? hits = [];
-  bool isLoading = true;
-  bool isLoadingMore = false;
-  String? errorMessage;
-  int currentPage = 1;
+  List<Hits>? _hits = [];
+  bool _isLoading = true;
+  bool _isLoadingMore = false;
+  String? _errorMessage;
+  int _currentPage = 1;
   final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
-    getImageList();
-    _scrollController.addListener(_scrollListener);
+    _fetchImageList();
+    _scrollController.addListener(_onScroll);
   }
 
   @override
@@ -34,105 +48,100 @@ class _PixabayImagesListState extends State<PixabayImagesList> {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Flutter Grid Example',
-      theme: ThemeData(
-        primarySwatch: Colors.blue,
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Pixabay Gallery'),
       ),
-      home: Scaffold(
-        appBar: AppBar(
-          title: const Text('Gallery'),
-        ),
-        body: isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : errorMessage != null
-            ? Center(child: Text('Failed to load images: $errorMessage'))
-            : Column(
-          children: [
-            Expanded(
-              child: VideoGrid(
-                imageList: hits,
-                scrollController: _scrollController,
-              ),
-            ),
-            if (isLoadingMore)
-              const Padding(
-                padding: EdgeInsets.all(8.0),
-                child: CircularProgressIndicator(),
-              ),
-          ],
-        ),
-      ),
+      body: _buildBody(),
     );
   }
 
-  void _scrollListener() {
-    if (_scrollController.position.pixels == _scrollController.position.maxScrollExtent &&
-        !isLoadingMore) {
-      loadMoreImages();
+  Widget _buildBody() {
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_errorMessage != null) {
+      return Center(child: Text('Failed to load images: $_errorMessage'));
+    }
+    return Column(
+      children: [
+        Expanded(
+          child: ImageGrid(
+            imageList: _hits,
+            scrollController: _scrollController,
+          ),
+        ),
+        if (_isLoadingMore)
+          const Padding(
+            padding: EdgeInsets.all(8.0),
+            child: CircularProgressIndicator(),
+          ),
+      ],
+    );
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels == _scrollController.position.maxScrollExtent && !_isLoadingMore) {
+      _loadMoreImages();
     }
   }
 
-  void getImageList() async {
+  Future<void> _fetchImageList() async {
     setState(() {
-      isLoading = true;
-      errorMessage = null;
+      _isLoading = true;
+      _errorMessage = null;
     });
 
     try {
-      final onValue = await ApiInterFace().fetchVideos("yellow+flowers", page: currentPage);
-      if (onValue?.statusCode == 200) {
+      final response = await ApiInterFace().fetchVideos("yellow+flowers", page: _currentPage);
+      if (response?.statusCode == 200) {
         setState(() {
-          hits = onValue?.hits ?? [];
-          isLoading = false;
+          _hits = response?.hits ?? [];
+          _isLoading = false;
         });
       } else {
-        setState(() {
-          errorMessage = 'Error: Unknown error';
-          isLoading = false;
-        });
+        _showError('Unknown error occurred.');
       }
     } catch (e) {
-      setState(() {
-        errorMessage = 'Error: $e';
-        isLoading = false;
-      });
+      _showError('Error: $e');
     }
   }
 
-  void loadMoreImages() async {
+  Future<void> _loadMoreImages() async {
     setState(() {
-      isLoadingMore = true;
+      _isLoadingMore = true;
     });
-    currentPage++;
+    _currentPage++;
 
     try {
-      final onValue = await ApiInterFace().fetchVideos("yellow+flowers", page: currentPage);
-      if (onValue?.statusCode == 200) {
+      final response = await ApiInterFace().fetchVideos("yellow+flowers", page: _currentPage);
+      if (response?.statusCode == 200) {
         setState(() {
-          hits?.addAll(onValue?.hits ?? []);
-          isLoadingMore = false;
+          _hits?.addAll(response?.hits ?? []);
+          _isLoadingMore = false;
         });
       } else {
-        setState(() {
-          errorMessage = 'Error: Unknown error';
-          isLoadingMore = false;
-        });
+        _showError('Unknown error occurred while loading more images.');
       }
     } catch (e) {
-      setState(() {
-        errorMessage = 'Error: $e';
-        isLoadingMore = false;
-      });
+      _showError('Error: $e');
     }
+  }
+
+  void _showError(String message) {
+    setState(() {
+      _errorMessage = message;
+      _isLoading = false;
+      _isLoadingMore = false;
+    });
   }
 }
 
-class VideoGrid extends StatelessWidget {
+class ImageGrid extends StatelessWidget {
   final List<Hits>? imageList;
   final ScrollController? scrollController;
 
-  VideoGrid({this.imageList, this.scrollController});
+  const ImageGrid({Key? key, this.imageList, this.scrollController}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -150,81 +159,91 @@ class VideoGrid extends StatelessWidget {
         itemBuilder: (context, index) {
           final video = imageList?[index];
           final imageUrl = video?.videos?.large?.thumbnail ?? '';
-
-          return GestureDetector(
-            onTap: () {
-              // Show dialog when tapped
-              showDialog(
-                context: context,
-                builder: (BuildContext context) {
-                  return Dialog(
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(15.0),
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        CachedNetworkImage(
-                          imageUrl: imageUrl,
-                          placeholder: (context, url) => const Padding(
-                            padding: EdgeInsets.all(16.0),
-                            child: CircularProgressIndicator(),
-                          ),
-                          errorWidget: (context, url, error) => const Icon(Icons.error),
-                          fit: BoxFit.cover,
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.all(16.0),
-                          child: Text(
-                            'Likes: ${video?.likes ?? 0}',
-                            style: const TextStyle(fontSize: 16),
-                          ),
-                        ),
-                        ElevatedButton(
-                          onPressed: () => Navigator.of(context).pop(),
-                          child: const Text('Close'),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              );
-            },
-            child: Card(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(15),
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(15),
-                child: GridTile(
-                  footer: GridTileBar(
-                    backgroundColor: Colors.black54,
-                    title: Row(
-                      children: [
-                        const Icon(
-                          Icons.thumb_up,
-                          color: Colors.red,
-                        ),
-                        const SizedBox(width: 5),
-                        Text(
-                          video?.likes.toString() ?? '',
-                          style: const TextStyle(fontSize: 14),
-                        ),
-                      ],
-                    ),
-                  ),
-                  child: CachedNetworkImage(
-                    imageUrl: imageUrl,
-                    placeholder: (context, url) => const Center(child: CircularProgressIndicator()),
-                    errorWidget: (context, url, error) => const Icon(Icons.error),
-                    fit: BoxFit.cover,
-                  ),
-                ),
-              ),
-            ),
-          );
+          return ImageGridItem(imageUrl: imageUrl, video: video);
         },
       ),
     );
   }
 }
+
+class ImageGridItem extends StatelessWidget {
+  final String imageUrl;
+  final Hits? video;
+
+  const ImageGridItem({Key? key, required this.imageUrl, required this.video}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => _showImageDialog(context, imageUrl, video),
+      child: Card(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(15),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(15),
+          child: GridTile(
+            footer: GridTileBar(
+              backgroundColor: Colors.black54,
+              title: Row(
+                children: [
+                  const Icon(Icons.thumb_up, color: Colors.red),
+                  const SizedBox(width: 5),
+                  Text(
+                    video?.likes.toString() ?? '',
+                    style: const TextStyle(fontSize: 14),
+                  ),
+                ],
+              ),
+            ),
+            child: CachedNetworkImage(
+              imageUrl: imageUrl,
+              placeholder: (context, url) => const Center(child: CircularProgressIndicator()),
+              errorWidget: (context, url, error) => const Icon(Icons.error),
+              fit: BoxFit.cover,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showImageDialog(BuildContext context, String imageUrl, Hits? video) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(15.0),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CachedNetworkImage(
+                imageUrl: imageUrl,
+                placeholder: (context, url) => const Padding(
+                  padding: EdgeInsets.all(16.0),
+                  child: CircularProgressIndicator(),
+                ),
+                errorWidget: (context, url, error) => const Icon(Icons.error),
+                fit: BoxFit.cover,
+              ),
+              Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Text(
+                  'Likes: ${video?.likes ?? 0}',
+                  style: const TextStyle(fontSize: 16),
+                ),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Close'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
